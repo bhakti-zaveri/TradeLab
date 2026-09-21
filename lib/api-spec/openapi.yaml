@@ -3,13 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: TradeLab educational paper-trading API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: dashboard
+    description: Trader overview
+  - name: replay
+    description: Historical market replay
+  - name: trading
+    description: Simulated orders and journal
+  - name: portfolio
+    description: Account and positions
+  - name: analytics
+    description: Behavioural analytics
 paths:
   /healthz:
     get:
@@ -24,6 +34,161 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get trader dashboard
+      responses:
+        "200":
+          description: Dashboard snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /instruments:
+    get:
+      operationId: listInstruments
+      tags: [replay]
+      summary: List educational instruments
+      responses:
+        "200":
+          description: Instruments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Instrument"
+  /replay:
+    get:
+      operationId: getReplay
+      tags: [replay]
+      summary: Get the active replay state
+      responses:
+        "200":
+          description: Replay state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayState"
+  /replay/action:
+    post:
+      operationId: performReplayAction
+      tags: [replay]
+      summary: Advance or control a replay session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayActionInput"
+      responses:
+        "200":
+          description: Updated replay state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayState"
+        "400":
+          description: Invalid replay action
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [trading]
+      summary: List simulated orders
+      responses:
+        "200":
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+    post:
+      operationId: placeOrder
+      tags: [trading]
+      summary: Place a simulated order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderInput"
+      responses:
+        "201":
+          description: Order accepted or executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Order validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /portfolio:
+    get:
+      operationId: getPortfolio
+      tags: [portfolio]
+      summary: Get current portfolio
+      responses:
+        "200":
+          description: Portfolio
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Portfolio"
+  /trades:
+    get:
+      operationId: listTrades
+      tags: [trading]
+      summary: List executed trades
+      responses:
+        "200":
+          description: Trade history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+  /journal:
+    post:
+      operationId: createJournalEntry
+      tags: [trading]
+      summary: Complete a trade journal entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalInput"
+      responses:
+        "201":
+          description: Journal entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntry"
+  /analytics:
+    get:
+      operationId: getAnalytics
+      tags: [analytics]
+      summary: Get behavioural analytics
+      responses:
+        "200":
+          description: Analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analytics"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +198,202 @@ components:
           type: string
       required:
         - status
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Instrument:
+      type: object
+      properties:
+        symbol: { type: string }
+        name: { type: string }
+        exchange: { type: string }
+        price: { type: number }
+        change: { type: number }
+        changePct: { type: number }
+        session: { type: string }
+        description: { type: string }
+      required: [symbol, name, exchange, price, change, changePct, session, description]
+    Candle:
+      type: object
+      properties:
+        time: { type: string }
+        open: { type: number }
+        high: { type: number }
+        low: { type: number }
+        close: { type: number }
+        volume: { type: integer }
+      required: [time, open, high, low, close, volume]
+    ReplayState:
+      type: object
+      properties:
+        symbol: { type: string }
+        instrumentName: { type: string }
+        replayDate: { type: string }
+        currentPrice: { type: number }
+        previousClose: { type: number }
+        isPlaying: { type: boolean }
+        speed: { type: integer }
+        candleIndex: { type: integer }
+        totalCandles: { type: integer }
+        candles:
+          type: array
+          items: { $ref: "#/components/schemas/Candle" }
+      required: [symbol, instrumentName, replayDate, currentPrice, previousClose, isPlaying, speed, candleIndex, totalCandles, candles]
+    ReplayActionInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [play, pause, next, restart]
+        speed:
+          type: integer
+          enum: [1, 2, 5, 10]
+        symbol:
+          type: string
+      required: [action]
+    Position:
+      type: object
+      properties:
+        symbol: { type: string }
+        name: { type: string }
+        quantity: { type: integer }
+        averagePrice: { type: number }
+        currentPrice: { type: number }
+        marketValue: { type: number }
+        unrealisedPnl: { type: number }
+        returnPct: { type: number }
+        weight: { type: number }
+        stopLoss: { type: ["number", "null"] }
+      required: [symbol, name, quantity, averagePrice, currentPrice, marketValue, unrealisedPnl, returnPct, weight, stopLoss]
+    Portfolio:
+      type: object
+      properties:
+        cash: { type: number }
+        equity: { type: number }
+        investedValue: { type: number }
+        realisedPnl: { type: number }
+        unrealisedPnl: { type: number }
+        positions:
+          type: array
+          items: { $ref: "#/components/schemas/Position" }
+      required: [cash, equity, investedValue, realisedPnl, unrealisedPnl, positions]
+    OrderInput:
+      type: object
+      properties:
+        symbol: { type: string }
+        side:
+          type: string
+          enum: [buy, sell]
+        orderType:
+          type: string
+          enum: [market, limit, stop]
+        quantity: { type: integer, minimum: 1 }
+        limitPrice: { type: ["number", "null"] }
+        stopPrice: { type: ["number", "null"] }
+      required: [symbol, side, orderType, quantity]
+    Order:
+      allOf:
+        - $ref: "#/components/schemas/OrderInput"
+        - type: object
+          properties:
+            id: { type: string }
+            status:
+              type: string
+              enum: [executed, pending, cancelled]
+            executedPrice: { type: ["number", "null"] }
+            createdAt: { type: string }
+            journalStatus:
+              type: string
+              enum: [complete, needs_review, not_required]
+          required: [id, status, executedPrice, createdAt, journalStatus]
+    Trade:
+      type: object
+      properties:
+        id: { type: string }
+        symbol: { type: string }
+        side: { type: string, enum: [buy, sell] }
+        entryPrice: { type: number }
+        exitPrice: { type: ["number", "null"] }
+        quantity: { type: integer }
+        realisedPnl: { type: number }
+        returnPct: { type: number }
+        reason: { type: ["string", "null"] }
+        mistake: { type: ["string", "null"] }
+        journalStatus: { type: string, enum: [complete, needs_review] }
+        executedAt: { type: string }
+      required: [id, symbol, side, entryPrice, exitPrice, quantity, realisedPnl, returnPct, reason, mistake, journalStatus, executedAt]
+    JournalInput:
+      type: object
+      properties:
+        tradeId: { type: string }
+        reason: { type: string }
+        mistake: { type: ["string", "null"] }
+        confidence: { type: integer, minimum: 1, maximum: 5 }
+        plannedEntry: { type: ["number", "null"] }
+        plannedStop: { type: ["number", "null"] }
+        plannedTarget: { type: ["number", "null"] }
+        notes: { type: string }
+      required: [tradeId, reason, confidence, notes]
+    JournalEntry:
+      allOf:
+        - $ref: "#/components/schemas/JournalInput"
+        - type: object
+          properties:
+            id: { type: string }
+            createdAt: { type: string }
+          required: [id, createdAt]
+    Dashboard:
+      type: object
+      properties:
+        portfolio: { $ref: "#/components/schemas/Portfolio" }
+        winRate: { type: number }
+        drawdown: { type: number }
+        openPositions: { type: integer }
+        activeReplay:
+          anyOf:
+            - $ref: "#/components/schemas/ReplayState"
+            - type: "null"
+        recentTrades:
+          type: array
+          items: { $ref: "#/components/schemas/Trade" }
+        insights:
+          type: array
+          items: { type: string }
+      required: [portfolio, winRate, drawdown, openPositions, activeReplay, recentTrades, insights]
+    Analytics:
+      type: object
+      properties:
+        totalTrades: { type: integer }
+        winningTrades: { type: integer }
+        losingTrades: { type: integer }
+        winRate: { type: number }
+        totalRealisedPnl: { type: number }
+        averageWin: { type: number }
+        averageLoss: { type: number }
+        riskReward: { type: number }
+        profitFactor: { type: number }
+        largestWin: { type: number }
+        largestLoss: { type: number }
+        averageHoldingHours: { type: number }
+        maxDrawdown: { type: number }
+        plannedStopPct: { type: number }
+        equityCurve:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string }
+              equity: { type: number }
+            required: [date, equity]
+        pnlByReason:
+          type: array
+          items:
+            type: object
+            properties:
+              reason: { type: string }
+              pnl: { type: number }
+            required: [reason, pnl]
 

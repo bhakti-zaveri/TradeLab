@@ -1,0 +1,270 @@
+Build a complete full-stack educational paper-trading web application called TradeLab.
+
+TradeLab is not a real brokerage and must not provide buy/sell recommendations. It is a simulator that gives users virtual money, lets them replay stored historical market data, place simulated trades, maintain a trade journal, and understand their trading behaviour through analytics.
+
+Use:
+- React with TypeScript for the frontend.
+- Node.js, Express and TypeScript for the backend.
+- Tailwind CSS.
+- shadcn/ui-style reusable components.
+- Lucide icons.
+- Recharts or Apache ECharts for analytics.
+- Lightweight Charts or another candlestick chart library for the replay chart.
+- React Hook Form and Zod for validated forms.
+- TanStack Query for server data.
+- Zustand for small client-side state.
+- JWT authentication.
+- bcrypt or argon2 for password hashing.
+- Socket.IO or native WebSocket for the replay price stream.
+- Google Sheets API as the persistence layer through the backend. Never expose Google credentials in the browser.
+- Keep the data access layer abstract so it can later be replaced by PostgreSQL or Supabase.
+
+The application must work without external live-market APIs. Include a small seed dataset of historical OHLCV candles for a few fictional or educational instruments such as TLAB, NIFTY-DEMO, RELIANCE-DEMO and INFY-DEMO. Clearly label the instruments as simulated educational data.
+
+Starting account balance:
+₹10,00,000.
+
+User roles:
+1. Trader:
+   - Trade using virtual money.
+   - View portfolio and orders.
+   - Complete a journal entry after each executed trade.
+   - View analytics.
+2. Admin:
+   - Manage instruments.
+   - Upload or seed historical candle data.
+   - Create and reset trading seasons.
+   - View users.
+   - View leaderboard.
+
+Required screens:
+1. Landing page.
+2. Login page.
+3. Registration page.
+4. Trader dashboard.
+5. Market replay terminal.
+6. Portfolio page.
+7. Orders and trade history page.
+8. Trade journal page.
+9. Analytics page.
+10. Admin dashboard.
+11. Instrument management page.
+12. Season management page.
+13. User management page.
+14. Settings page.
+
+Trader dashboard:
+- Display current equity.
+- Available cash.
+- Realised P&L.
+- Unrealised P&L.
+- Win rate.
+- Current drawdown.
+- Open positions.
+- Active replay session.
+- Recent behavioural insight cards.
+- Include a clear disclaimer that the tool is for education and simulation only.
+
+Replay terminal:
+- Use a dark blue/charcoal theme, not pure black.
+- Three-column desktop layout:
+  - Left: instrument and replay controls.
+  - Centre: candlestick chart.
+  - Right: order ticket and account summary.
+- Support play, pause, next candle, restart and speeds of 1x, 2x, 5x and 10x.
+- Display simulated replay date and time.
+- At each candle update:
+  - Update current price.
+  - Revalue open positions.
+  - Check pending limit orders.
+  - Check stop-loss orders.
+  - Update unrealised P&L.
+  - Add equity snapshot.
+  - Emit the state through WebSocket.
+- Provide a working fallback polling mode if WebSocket is unavailable.
+
+Order types:
+1. Market order:
+   - Execute at the current simulated price.
+2. Limit order:
+   - Buy limit triggers when current price is less than or equal to limit price.
+   - Sell limit triggers when current price is greater than or equal to limit price.
+3. Stop-loss:
+   - Support long positions first.
+   - A long stop-loss triggers when current price is less than or equal to stop price.
+
+Order validation:
+- Quantity must be a positive whole number.
+- Buy orders require sufficient available cash.
+- Sell orders require sufficient shares.
+- Limit and stop prices must be valid.
+- A stop-loss must be below the entry price for a long position.
+- Do not allow orders after the replay session ends.
+- Show clear, human-readable validation messages.
+
+After an order is executed:
+- Open a mandatory journal modal.
+- Require a reason tag:
+  - Breakout
+  - News
+  - Trend continuation
+  - Support/resistance
+  - Mean reversion
+  - FOMO
+  - Revenge trade
+  - Social media tip
+  - Experiment
+  - Other
+- Allow:
+  - Mistake tag
+  - Confidence from 1 to 5
+  - Planned entry
+  - Planned stop
+  - Planned target
+  - Free-text notes
+- Mark a trade as needing review if the journal entry is incomplete.
+
+Portfolio:
+- Show cash balance.
+- Total equity.
+- Invested value.
+- Holdings.
+- Quantity.
+- Average buy price.
+- Current price.
+- Unrealised P&L.
+- Unrealised return percentage.
+- Portfolio weight.
+- Attached stop-loss.
+- Use transaction records as the source of truth.
+
+Trade history:
+- Filters for date, instrument, outcome, reason and mistake.
+- Show entry price, exit price, quantity, realised P&L, return, reason and journal status.
+- Provide a trade detail page with the full journal entry.
+
+Analytics:
+Calculate and display:
+- Total trades.
+- Winning trades.
+- Losing trades.
+- Win rate.
+- Total realised P&L.
+- Average win.
+- Average loss.
+- Risk-reward ratio.
+- Profit factor.
+- Largest win.
+- Largest loss.
+- Average holding time.
+- Maximum drawdown.
+- Average position size.
+- Percentage of trades with planned stops.
+- P&L by reason tag.
+- P&L by mistake tag.
+- Win rate by instrument.
+- Equity curve.
+- Daily P&L chart.
+- Drawdown chart.
+- Portfolio allocation chart.
+
+Use these formulas:
+winRate = winningTrades / closedTrades * 100
+averageWin = totalWinningPnl / winningTrades
+averageLoss = totalLosingPnl / losingTrades
+riskReward = averageWin / abs(averageLoss)
+drawdown = (currentEquity - previousPeakEquity) / previousPeakEquity
+maxDrawdown = minimum drawdown value
+
+Add educational behavioural insight cards such as:
+- “Your FOMO trades have a lower win rate than your breakout trades.”
+- “Your average loss is larger than your average win.”
+- “You exceeded your selected risk level in several trades.”
+- “Your strongest results came from a particular reason tag.”
+
+These insights must describe the user’s own historical data. They must not make market predictions or give financial advice.
+
+Admin features:
+- Create, edit and disable instruments.
+- Upload or seed historical candle data.
+- Create, activate, pause and archive seasons.
+- Reset trader accounts to ₹10,00,000.
+- View users and roles.
+- Disable users.
+- View leaderboard by return percentage and risk-adjusted return.
+- Do not rank users only by raw profit.
+
+Data entities:
+- User
+- Season
+- Account
+- Instrument
+- PriceCandle
+- Order
+- Execution
+- Position
+- JournalEntry
+- EquitySnapshot
+- AuditLog
+
+Use a repository/service architecture:
+- authService
+- replayService
+- orderService
+- portfolioService
+- journalService
+- analyticsService
+- adminService
+- sheetsRepository
+
+Create clean REST endpoints for authentication, replay, orders, portfolio, journal, analytics and admin features.
+
+UI design:
+- Use a refined dark theme based on dark navy, slate and charcoal.
+- Do not use a pure black background.
+- Suggested colours:
+  background #101827
+  sidebar #151F32
+  cards #1B273B
+  elevated surface #22314A
+  text #F3F6FB
+  secondary text #9AA9BE
+  borders #2D3B52
+  positive #43D19E
+  negative #FF6B7A
+  warning #F5B860
+  accent #6D8DFF
+- Use Inter or Geist font.
+- Use monospace styling for numeric prices and P&L values.
+- Use icons, labels and +/- signs in addition to colour.
+- Include responsive layouts for desktop, tablet and mobile.
+- Use consistent spacing and rounded cards.
+- Avoid excessive glassmorphism and visual clutter.
+- Provide loading states, empty states, error states, confirmation dialogs and success toasts.
+- Use tooltips to explain financial metrics.
+- Make the order ticket visually prominent but not aggressive.
+- Add a pre-trade risk preview showing order value, portfolio weight, estimated stop risk and warning level.
+- Use accessible contrast and keyboard-friendly controls.
+
+Security:
+- Never store plain-text passwords.
+- Keep JWT secrets and Google credentials in environment variables.
+- Enforce role permissions on the backend.
+- Validate all request bodies with Zod.
+- Never trust calculated prices or balances sent by the client.
+- Calculate order execution and portfolio updates on the server.
+- Add an audit log for important actions.
+
+Create:
+- Seed data.
+- Example environment variable file.
+- README with local setup.
+- API documentation.
+- Google Sheets setup instructions.
+- Deployment instructions for Vercel frontend and Render backend.
+- A basic test suite for order validation, portfolio calculations, analytics calculations and role permissions.
+
+First implement the core working flow:
+register → login → open replay → place market order → update portfolio → close position → complete journal → view analytics.
+
+Do not add real brokerage integration, real-money trading or trading recommendations.

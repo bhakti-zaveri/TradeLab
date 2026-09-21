@@ -1,6 +1,6 @@
-# [Project name]
+# TradeLab
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+TradeLab is an educational paper-trading simulator for replaying fictional market data, placing virtual trades, journaling decisions, and studying trading behaviour.
 
 ## Run & Operate
 
@@ -22,23 +22,32 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/tradelab` — React + Vite frontend with landing, auth, trader, replay, portfolio, journal, analytics, admin, and settings routes.
+- `artifacts/api-server/src/routes/tradelab.ts` — server-owned seeded replay, order, portfolio, journal, and analytics flow.
+- `lib/api-spec/openapi.yaml` — source of truth for the API contract and generated client hooks.
+- `artifacts/tradelab/src/index.css` — TradeLab dark navy / electric-lime visual system.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The first vertical slice uses seeded fictional instruments and server-side simulation state so TradeLab never depends on live market data.
+- Client calls are generated from the OpenAPI contract; order validation, execution, balances, portfolio values, and analytics are calculated on the server.
+- Persistence is kept behind the service boundary so the current simulator can later use Google Sheets or PostgreSQL without changing the frontend contract.
+- The product always labels data as simulated educational content and does not provide trading recommendations.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Learners can replay TLAB, NIFTY-DEMO, RELIANCE-DEMO, and INFY-DEMO candle data.
+- Learners can place virtual market, limit, and stop orders, review their portfolio, complete a trade journal, and inspect behavioural analytics.
+- The first build includes admin and settings surfaces for the broader product shape.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+No additional preferences recorded.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The API server is mounted at `/api`; the frontend must use generated hooks rather than hard-coded service ports.
+- Google Sheets is not connected yet; the repository boundary is ready for the connector once authorized.
 
 ## Pointers
 

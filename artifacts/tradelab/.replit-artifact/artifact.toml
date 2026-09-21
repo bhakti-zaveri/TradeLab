@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "TradeLab"
+description = "An educational paper-trading simulator where learners replay stored market data, place virtual trades, journal their decisions, and understand their trading behaviour through analytics."
+version = "1.0.0"
+id = "artifacts/tradelab"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20435
+
+[services.development]
+run = "pnpm --filter @workspace/tradelab run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tradelab", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tradelab/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20435"
+BASE_PATH = "/"
