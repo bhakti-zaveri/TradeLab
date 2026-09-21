@@ -12,6 +12,7 @@ import {
   PerformReplayActionResponse,
   PlaceOrderBody,
 } from "@workspace/api-zod";
+import { appendTradeLabEvent } from "../lib/sheetsRepository";
 
 type Candle = {
   time: string;
@@ -422,6 +423,14 @@ router.post("/orders", (req, res) => {
       plannedStop: input.stopPrice ?? null,
     };
     if (input.side === "buy") trades.unshift(buyTrade);
+    void appendTradeLabEvent({
+      type: "order",
+      id: order.id,
+      symbol: input.symbol,
+      user: "demo-trader",
+      payload: JSON.stringify(order),
+      createdAt: order.createdAt,
+    });
   }
   return res.status(201).json(order) as never;
 });
@@ -437,6 +446,14 @@ router.post("/journal", (req, res) => {
   trade.journalStatus = "complete";
   const order = orders.find((item) => item.symbol === trade.symbol && item.journalStatus === "needs_review");
   if (order) order.journalStatus = "complete";
+  void appendTradeLabEvent({
+    type: "journal",
+    id: trade.id,
+    symbol: trade.symbol,
+    user: "demo-trader",
+    payload: JSON.stringify(parsed.data),
+    createdAt: now(),
+  });
   return res.status(201).json({ id: `JRN-${trade.id}`, ...parsed.data, createdAt: now() }) as never;
 });
 
