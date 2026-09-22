@@ -10,7 +10,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   });
 
   if (!user) {
-    return res.status(401).json({ error: "Unauthorized. Demo user not found." });
+    res.status(401).json({ error: "Unauthorized. Demo user not found." });
+    return;
   }
 
   const account = await db.query.accounts.findFirst({
@@ -18,7 +19,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   });
 
   if (!account) {
-    return res.status(401).json({ error: "Unauthorized. Demo account not found." });
+    res.status(401).json({ error: "Unauthorized. Demo account not found." });
+    return;
   }
 
   // Attach user/account context to request
