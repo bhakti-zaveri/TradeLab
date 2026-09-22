@@ -362,6 +362,15 @@ export async function customFetch<T = unknown>(
 
   const response = await fetch(input, { ...init, method, headers });
 
+  const mediaType = getMediaType(response.headers);
+  if (mediaType === "text/html" && requestInfo.url.includes("/api/")) {
+    throw new ApiError(
+      response,
+      { error: "API backend is not running. Returning mock error." },
+      requestInfo,
+    );
+  }
+
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
