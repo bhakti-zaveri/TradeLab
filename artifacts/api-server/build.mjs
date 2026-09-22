@@ -32,6 +32,8 @@ async function buildAll() {
       "sharp",
       "better-sqlite3",
       "sqlite3",
+      "@libsql/client",
+      "libsql",
       "canvas",
       "bcrypt",
       "argon2",

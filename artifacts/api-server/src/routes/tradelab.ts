@@ -12,7 +12,11 @@ import {
   PerformReplayActionResponse,
   PlaceOrderBody,
 } from "@workspace/api-zod";
-import { appendTradeLabEvent } from "../lib/sheetsRepository";
+import { requireAuth } from "../middlewares/auth";
+import { db } from "@workspace/db";
+import { accounts, positions, orders, trades } from "@workspace/db/schema";
+import { eq, desc } from "drizzle-orm";
+import crypto from "crypto";
 
 type Candle = {
   time: string;
@@ -34,52 +38,9 @@ type Instrument = {
   description: string;
 };
 
-type Position = {
-  symbol: string;
-  name: string;
-  quantity: number;
-  averagePrice: number;
-  currentPrice: number;
-  marketValue: number;
-  unrealisedPnl: number;
-  returnPct: number;
-  weight: number;
-  stopLoss: number | null;
-};
-
-type Order = {
-  id: string;
-  symbol: string;
-  side: "buy" | "sell";
-  orderType: "market" | "limit" | "stop";
-  quantity: number;
-  limitPrice?: number | null;
-  stopPrice?: number | null;
-  status: "executed" | "pending" | "cancelled";
-  executedPrice: number | null;
-  createdAt: string;
-  journalStatus: "complete" | "needs_review" | "not_required";
-};
-
-type Trade = {
-  id: string;
-  symbol: string;
-  side: "buy" | "sell";
-  entryPrice: number;
-  exitPrice: number | null;
-  quantity: number;
-  realisedPnl: number;
-  returnPct: number;
-  reason: string | null;
-  mistake: string | null;
-  journalStatus: "complete" | "needs_review";
-  executedAt: string;
-  plannedStop?: number | null;
-};
-
 const router: IRouter = Router();
-const startingCash = 1_000_000;
 
+// --- IN-MEMORY MARKET DATA FOR REPLAY ---
 const seedCandles = (base: number, offset: number): Candle[] =>
   Array.from({ length: 42 }, (_, index) => {
     const wave = Math.sin((index + offset) / 2.8) * base * 0.018;
@@ -98,117 +59,56 @@ const seedCandles = (base: number, offset: number): Candle[] =>
     };
   });
 
-const marketData: Record<string, Candle[]> = {
-  "TLAB": seedCandles(1_248, 2),
-  "NIFTY-DEMO": seedCandles(22_180, 4),
-  "RELIANCE-DEMO": seedCandles(2_964, 6),
-  "INFY-DEMO": seedCandles(1_485, 8),
+const marketData: Record<string, Candle[]> = {};
+const instruments: Instrument[] = [];
+
+const createInstrument = (
+  symbol: string,
+  name: string,
+  price: number,
+  change: number,
+  desc: string,
+) => {
+  instruments.push({
+    symbol,
+    name,
+    exchange: "SIM",
+    price,
+    change,
+    changePct: Number(((change / price) * 100).toFixed(2)),
+    session: "regular",
+    description: desc,
+  });
+  marketData[symbol] = seedCandles(price, instruments.length * 4);
 };
 
-const instruments: Instrument[] = [
-  {
-    symbol: "TLAB",
-    name: "TradeLab Index",
-    exchange: "EDU",
-    price: 1298.45,
-    change: 18.4,
-    changePct: 1.44,
-    session: "Replay ready",
-    description: "Fictional learning instrument with a trend-led replay set.",
-  },
-  {
-    symbol: "NIFTY-DEMO",
-    name: "NIFTY Demo",
-    exchange: "EDU",
-    price: 22480.2,
-    change: -94.1,
-    changePct: -0.42,
-    session: "Replay ready",
-    description: "Synthetic index data for practicing position sizing.",
-  },
-  {
-    symbol: "RELIANCE-DEMO",
-    name: "Reliance Demo",
-    exchange: "EDU",
-    price: 3012.75,
-    change: 26.2,
-    changePct: 0.88,
-    session: "Replay ready",
-    description: "Fictional large-cap replay data for execution drills.",
-  },
-  {
-    symbol: "INFY-DEMO",
-    name: "INFY Demo",
-    exchange: "EDU",
-    price: 1518.35,
-    change: 7.6,
-    changePct: 0.5,
-    session: "Replay ready",
-    description: "Synthetic technology instrument for journaling practice.",
-  },
-];
+createInstrument("RELIANCE", "Reliance Industries", 2954.2, 12.5, "Heavyweight Indian conglomerate. Expect steady institutional flow.");
+createInstrument("TCS", "Tata Consultancy Services", 4125.8, -15.4, "Leading IT services. Slower price action and range-bound behavior.");
+createInstrument("HDFCBANK", "HDFC Bank Ltd.", 1642.1, 8.2, "Banking sector proxy. Watch for breakout failures and moving average support.");
+createInstrument("INFY", "Infosys Limited", 1892.4, -2.1, "High volume IT stock. Prone to gap downs and slow grinds.");
+createInstrument("NIFTY-50", "Nifty 50 Index", 24350.5, 115.2, "Broad market Indian index. Highly liquid and volatile.");
 
-let cash = startingCash;
-let replaySymbol = "TLAB";
+let replaySymbol = "RELIANCE";
 let replayIndex = 24;
 let replayPlaying = false;
 let replaySpeed = 1;
-let orderSequence = 1004;
-let tradeSequence = 3;
-const positions = new Map<string, Position>();
-const orders: Order[] = [
-  {
-    id: "ORD-1003",
-    symbol: "TLAB",
-    side: "buy",
-    orderType: "market",
-    quantity: 120,
-    executedPrice: 1248.25,
-    status: "executed",
-    createdAt: "2024-05-22T09:30:00Z",
-    journalStatus: "complete",
-  },
-];
-const trades: Trade[] = [
-  {
-    id: "TRD-0002",
-    symbol: "TLAB",
-    side: "sell",
-    entryPrice: 1216.5,
-    exitPrice: 1264.75,
-    quantity: 80,
-    realisedPnl: 3860,
-    returnPct: 4.97,
-    reason: "Breakout",
-    mistake: null,
-    journalStatus: "complete",
-    executedAt: "2024-05-21T11:10:00Z",
-    plannedStop: 1198,
-  },
-  {
-    id: "TRD-0001",
-    symbol: "INFY-DEMO",
-    side: "sell",
-    entryPrice: 1488.2,
-    exitPrice: 1469.9,
-    quantity: 65,
-    realisedPnl: -1189.5,
-    returnPct: -1.23,
-    reason: "FOMO",
-    mistake: "Entered without a stop",
-    journalStatus: "complete",
-    executedAt: "2024-05-17T13:45:00Z",
-    plannedStop: null,
-  },
-];
 
 const now = () => new Date().toISOString();
-const currentCandle = () => marketData[replaySymbol][replayIndex] ?? marketData[replaySymbol].at(-1)!;
-const currentPrice = () => currentCandle().close;
-const currentInstrument = () => instruments.find((item) => item.symbol === replaySymbol)!;
+const currentCandle = () => marketData[replaySymbol]?.[replayIndex] ?? null;
+const currentPrice = () => currentCandle()?.close ?? 0;
+const currentInstrument = () => instruments.find((item) => item.symbol === replaySymbol);
 
-const portfolio = () => {
-  const currentPositions = [...positions.values()].map((position) => {
+// Apply auth middleware to all routes
+router.use(requireAuth);
+
+const getPortfolio = async (accountId: string) => {
+  const account = await db.query.accounts.findFirst({ where: eq(accounts.id, accountId) });
+  if (!account) throw new Error("Account not found");
+
+  const allPositions = await db.query.positions.findMany({ where: eq(positions.accountId, accountId) });
+  const allTrades = await db.query.trades.findMany({ where: eq(trades.accountId, accountId) });
+  
+  const currentPositions = allPositions.map((position) => {
     const livePrice = position.symbol === replaySymbol ? currentPrice() : position.currentPrice;
     const marketValue = livePrice * position.quantity;
     const unrealisedPnl = (livePrice - position.averagePrice) * position.quantity;
@@ -220,12 +120,14 @@ const portfolio = () => {
       returnPct: Number(((unrealisedPnl / (position.averagePrice * position.quantity)) * 100).toFixed(2)),
     };
   });
+
   const investedValue = currentPositions.reduce((sum, position) => sum + position.marketValue, 0);
   const unrealisedPnl = currentPositions.reduce((sum, position) => sum + position.unrealisedPnl, 0);
-  const realisedPnl = trades.reduce((sum, trade) => sum + trade.realisedPnl, 0);
-  const equity = cash + investedValue;
+  const realisedPnl = allTrades.reduce((sum, trade) => sum + trade.realisedPnl, 0);
+  const equity = account.balance + investedValue;
+
   return {
-    cash: Number(cash.toFixed(2)),
+    cash: Number(account.balance.toFixed(2)),
     equity: Number(equity.toFixed(2)),
     investedValue: Number(investedValue.toFixed(2)),
     realisedPnl: Number(realisedPnl.toFixed(2)),
@@ -238,33 +140,59 @@ const portfolio = () => {
 };
 
 const replayState = () => {
-  const candles = marketData[replaySymbol].slice(0, replayIndex + 1);
+  const candles = marketData[replaySymbol]?.slice(0, replayIndex + 1) ?? [];
   return {
     symbol: replaySymbol,
-    instrumentName: currentInstrument().name,
-    replayDate: currentCandle().time,
+    instrumentName: currentInstrument()?.name ?? "",
+    replayDate: currentCandle()?.time ?? now(),
     currentPrice: currentPrice(),
-    previousClose: candles.at(-2)?.close ?? currentCandle().open,
+    previousClose: candles.at(-2)?.close ?? currentCandle()?.open ?? 0,
     isPlaying: replayPlaying,
     speed: replaySpeed,
     candleIndex: replayIndex,
-    totalCandles: marketData[replaySymbol].length,
+    totalCandles: marketData[replaySymbol]?.length ?? 0,
     candles,
   };
 };
 
-const analytics = () => {
-  const closed = trades.filter((trade) => trade.exitPrice !== null);
+const getAnalytics = async (accountId: string) => {
+  const allTrades = await db.query.trades.findMany({ where: eq(trades.accountId, accountId) });
+  const closed = allTrades.filter((trade) => trade.exitPrice !== null);
   const wins = closed.filter((trade) => trade.realisedPnl > 0);
   const losses = closed.filter((trade) => trade.realisedPnl < 0);
+  
   const totalWinningPnl = wins.reduce((sum, trade) => sum + trade.realisedPnl, 0);
   const totalLosingPnl = losses.reduce((sum, trade) => sum + trade.realisedPnl, 0);
   const averageWin = wins.length ? totalWinningPnl / wins.length : 0;
   const averageLoss = losses.length ? totalLosingPnl / losses.length : 0;
+  
   const byReason = [...new Set(closed.map((trade) => trade.reason).filter(Boolean))].map((reason) => ({
     reason: reason as string,
     pnl: Number(closed.filter((trade) => trade.reason === reason).reduce((sum, trade) => sum + trade.realisedPnl, 0).toFixed(2)),
   }));
+
+  // Build equity curve and calculate max drawdown
+  let runningEquity = 1000000;
+  let peakEquity = runningEquity;
+  let maxDrawdownPct = 0;
+  const equityCurve = [];
+  
+  // Sort closed trades by execution date chronologically
+  const sortedTrades = [...closed].sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime());
+  
+  for (const trade of sortedTrades) {
+    runningEquity += trade.realisedPnl;
+    if (runningEquity > peakEquity) peakEquity = runningEquity;
+    
+    const drawdownPct = ((peakEquity - runningEquity) / peakEquity) * 100;
+    if (drawdownPct > maxDrawdownPct) maxDrawdownPct = drawdownPct;
+    
+    equityCurve.push({
+      date: trade.executedAt,
+      equity: Number(runningEquity.toFixed(2))
+    });
+  }
+  
   return {
     totalTrades: closed.length,
     winningTrades: wins.length,
@@ -277,42 +205,37 @@ const analytics = () => {
     profitFactor: totalLosingPnl ? Number((totalWinningPnl / Math.abs(totalLosingPnl)).toFixed(2)) : 0,
     largestWin: wins.length ? Math.max(...wins.map((trade) => trade.realisedPnl)) : 0,
     largestLoss: losses.length ? Math.min(...losses.map((trade) => trade.realisedPnl)) : 0,
-    averageHoldingHours: 18.4,
-    maxDrawdown: -2.14,
+    averageHoldingHours: 1.2, // Mocked for now as we don't store entry time separately
+    maxDrawdown: Number((-maxDrawdownPct).toFixed(2)),
     plannedStopPct: closed.length ? Number(((closed.filter((trade) => trade.plannedStop).length / closed.length) * 100).toFixed(2)) : 0,
-    equityCurve: [
-      { date: "May 17", equity: 1_000_000 },
-      { date: "May 18", equity: 1_004_200 },
-      { date: "May 19", equity: 1_001_800 },
-      { date: "May 20", equity: 1_006_900 },
-      { date: "May 21", equity: 1_008_900 },
-      { date: "May 22", equity: portfolio().equity },
-    ],
+    equityCurve,
     pnlByReason: byReason,
   };
 };
 
-router.get("/dashboard", (_req, res) => {
-  const currentPortfolio = portfolio();
-  const currentAnalytics = analytics();
+router.get("/dashboard", async (req, res) => {
+  const accountId = (req as any).account.id;
+  const currentPortfolio = await getPortfolio(accountId);
+  const currentAnalytics = await getAnalytics(accountId);
+  const recentTrades = await db.query.trades.findMany({ 
+    where: eq(trades.accountId, accountId), 
+    orderBy: [desc(trades.executedAt)],
+    limit: 5
+  });
+
   const data = {
     portfolio: currentPortfolio,
     winRate: currentAnalytics.winRate,
     drawdown: currentAnalytics.maxDrawdown,
     openPositions: currentPortfolio.positions.length,
     activeReplay: replayState(),
-    recentTrades: trades,
-    insights: [
-      "Your breakout trades currently have a higher win rate than your FOMO trades.",
-      "You planned stops on 50% of closed trades. Try making risk visible before every entry.",
-      "Your strongest result so far came from the Breakout reason tag.",
-    ],
+    recentTrades,
+    insights: [],
   };
   res.json(GetDashboardResponse.parse(data));
 });
 
 router.get("/instruments", (_req, res) => res.json(ListInstrumentsResponse.parse(instruments)));
-
 router.get("/replay", (_req, res) => res.json(GetReplayResponse.parse(replayState())));
 
 router.post("/replay/action", (req, res) => {
@@ -331,65 +254,125 @@ router.post("/replay/action", (req, res) => {
     replayPlaying = false;
   }
   if (action === "next") {
-    replayIndex = Math.min(replayIndex + 1, marketData[replaySymbol].length - 1);
+    replayIndex = Math.min(replayIndex + 1, (marketData[replaySymbol]?.length ?? 1) - 1);
     replayPlaying = false;
   }
   return res.json(PerformReplayActionResponse.parse(replayState())) as never;
 });
 
-router.get("/portfolio", (_req, res) => res.json(GetPortfolioResponse.parse(portfolio())));
-router.get("/orders", (_req, res) => res.json(ListOrdersResponse.parse(orders)));
-router.get("/trades", (_req, res) => res.json(ListTradesResponse.parse(trades)));
+router.get("/portfolio", async (req, res) => {
+  const accountId = (req as any).account.id;
+  res.json(GetPortfolioResponse.parse(await getPortfolio(accountId)));
+});
 
-router.post("/orders", (req, res) => {
+router.get("/orders", async (req, res) => {
+  const accountId = (req as any).account.id;
+  const allOrders = await db.query.orders.findMany({ where: eq(orders.accountId, accountId), orderBy: [desc(orders.createdAt)] });
+  res.json(ListOrdersResponse.parse(allOrders));
+});
+
+router.get("/trades", async (req, res) => {
+  const accountId = (req as any).account.id;
+  const allTrades = await db.query.trades.findMany({ where: eq(trades.accountId, accountId), orderBy: [desc(trades.executedAt)] });
+  res.json(ListTradesResponse.parse(allTrades));
+});
+
+router.post("/orders", async (req, res) => {
   const parsed = PlaceOrderBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Enter a whole-number quantity and a valid order type." }) as never;
   const input = parsed.data;
+  const accountId = (req as any).account.id;
+  let cash = (req as any).account.balance;
+  
   const price = currentPrice();
   if (!marketData[input.symbol]) return res.status(400).json({ error: "That instrument is not available in the educational dataset." }) as never;
-  const position = positions.get(input.symbol);
+  
+  const position = await db.query.positions.findFirst({ where: eq(positions.symbol, input.symbol) });
+  
+  if (!input.stopPrice) {
+    return res.status(400).json({ error: "A stop-loss is mandatory. Calculate your risk before entering." }) as never;
+  }
+
+  const riskPerShare = input.side === "buy" ? price - input.stopPrice : input.stopPrice - price;
+  if (riskPerShare <= 0) {
+    return res.status(400).json({ error: "Stop-loss must be below entry for longs and above entry for shorts." }) as never;
+  }
+
+  const totalRisk = riskPerShare * input.quantity;
+
   if (input.side === "buy" && input.orderType === "market" && cash < price * input.quantity) {
     return res.status(400).json({ error: "Insufficient available cash for this simulated order." }) as never;
   }
   if (input.side === "sell" && (!position || position.quantity < input.quantity)) {
     return res.status(400).json({ error: "You do not have enough simulated shares to sell." }) as never;
   }
+  
   const canExecute = input.orderType === "market";
-  const order: Order = {
-    id: `ORD-${orderSequence++}`,
+  const orderId = `ORD-${crypto.randomUUID()}`;
+  
+  const orderData = {
+    id: orderId,
+    accountId,
     ...input,
     status: canExecute ? "executed" : "pending",
     executedPrice: canExecute ? price : null,
     createdAt: now(),
-    journalStatus: canExecute ? "needs_review" : "not_required",
-  };
-  orders.unshift(order);
+  } as any;
+  
+  await db.insert(orders).values(orderData);
+  
   if (canExecute) {
     if (input.side === "buy") {
       const previous = position?.quantity ?? 0;
       const averagePrice = position
         ? ((position.averagePrice * previous) + price * input.quantity) / (previous + input.quantity)
         : price;
+        
       cash -= price * input.quantity;
-      positions.set(input.symbol, {
+      await db.update(accounts).set({ balance: cash }).where(eq(accounts.id, accountId));
+      
+      if (position) {
+        await db.update(positions).set({ quantity: previous + input.quantity, averagePrice, currentPrice: price }).where(eq(positions.id, position.id));
+      } else {
+        await db.insert(positions).values({
+          id: crypto.randomUUID(),
+          accountId,
+          symbol: input.symbol,
+          name: currentInstrument()?.name ?? "",
+          quantity: input.quantity,
+          averagePrice,
+          currentPrice: price,
+          stopLoss: input.stopPrice ?? null,
+        });
+      }
+      
+      await db.insert(trades).values({
+        id: `TRD-${crypto.randomUUID()}`,
+        accountId,
         symbol: input.symbol,
-        name: currentInstrument().name,
-        quantity: previous + input.quantity,
-        averagePrice,
-        currentPrice: price,
-        marketValue: price * (previous + input.quantity),
-        unrealisedPnl: 0,
+        side: input.side,
+        entryPrice: price,
+        exitPrice: null,
+        quantity: input.quantity,
+        realisedPnl: 0,
         returnPct: 0,
-        weight: 0,
-        stopLoss: input.stopPrice ?? null,
+        reason: null,
+        mistake: null,
+        journalStatus: "needs_review",
+        executedAt: now(),
+        plannedStop: input.stopPrice ?? null,
       });
+      
     } else {
       const heldPosition = position!;
       const averagePrice = heldPosition.averagePrice;
       cash += price * input.quantity;
+      await db.update(accounts).set({ balance: cash }).where(eq(accounts.id, accountId));
+      
       const realisedPnl = (price - averagePrice) * input.quantity;
-      trades.unshift({
-        id: `TRD-${String(tradeSequence++).padStart(4, "0")}`,
+      await db.insert(trades).values({
+        id: `TRD-${crypto.randomUUID()}`,
+        accountId,
         symbol: input.symbol,
         side: "sell",
         entryPrice: averagePrice,
@@ -403,60 +386,41 @@ router.post("/orders", (req, res) => {
         executedAt: now(),
         plannedStop: null,
       });
+      
       const remaining = heldPosition.quantity - input.quantity;
-      if (remaining) positions.set(input.symbol, { ...heldPosition, quantity: remaining });
-      else positions.delete(input.symbol);
+      if (remaining > 0) {
+        await db.update(positions).set({ quantity: remaining }).where(eq(positions.id, heldPosition.id));
+      } else {
+        await db.delete(positions).where(eq(positions.id, heldPosition.id));
+      }
     }
-    const buyTrade: Trade = {
-      id: `TRD-${String(tradeSequence++).padStart(4, "0")}`,
-      symbol: input.symbol,
-      side: input.side,
-      entryPrice: price,
-      exitPrice: input.side === "sell" ? price : null,
-      quantity: input.quantity,
-      realisedPnl: 0,
-      returnPct: 0,
-      reason: null,
-      mistake: null,
-      journalStatus: "needs_review",
-      executedAt: now(),
-      plannedStop: input.stopPrice ?? null,
-    };
-    if (input.side === "buy") trades.unshift(buyTrade);
-    void appendTradeLabEvent({
-      type: "order",
-      id: order.id,
-      symbol: input.symbol,
-      user: "demo-trader",
-      payload: JSON.stringify(order),
-      createdAt: order.createdAt,
-    });
   }
-  return res.status(201).json(order) as never;
+  
+  return res.status(201).json(orderData) as never;
 });
 
-router.post("/journal", (req, res) => {
+router.post("/journal", async (req, res) => {
   const parsed = CreateJournalEntryBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "A reason, confidence score, and notes are required." }) as never;
-  const trade = trades.find((item) => item.id === parsed.data.tradeId);
-  if (!trade) return res.status(404).json({ error: "Trade not found." }) as never;
-  trade.reason = parsed.data.reason;
-  trade.mistake = parsed.data.mistake ?? null;
-  trade.plannedStop = parsed.data.plannedStop ?? null;
-  trade.journalStatus = "complete";
-  const order = orders.find((item) => item.symbol === trade.symbol && item.journalStatus === "needs_review");
-  if (order) order.journalStatus = "complete";
-  void appendTradeLabEvent({
-    type: "journal",
-    id: trade.id,
-    symbol: trade.symbol,
-    user: "demo-trader",
-    payload: JSON.stringify(parsed.data),
-    createdAt: now(),
-  });
+  const accountId = (req as any).account.id;
+  const trade = await db.query.trades.findFirst({ where: eq(trades.id, parsed.data.tradeId) });
+  
+  if (!trade || trade.accountId !== accountId) return res.status(404).json({ error: "Trade not found." }) as never;
+  
+  await db.update(trades).set({
+    reason: parsed.data.reason,
+    mistake: parsed.data.mistake ?? null,
+    confidence: parsed.data.confidence ?? null,
+    plannedStop: parsed.data.plannedStop ?? null,
+    journalStatus: "complete"
+  }).where(eq(trades.id, trade.id));
+  
   return res.status(201).json({ id: `JRN-${trade.id}`, ...parsed.data, createdAt: now() }) as never;
 });
 
-router.get("/analytics", (_req, res) => res.json(GetAnalyticsResponse.parse(analytics())));
+router.get("/analytics", async (req, res) => {
+  const accountId = (req as any).account.id;
+  res.json(GetAnalyticsResponse.parse(await getAnalytics(accountId)));
+});
 
 export default router;

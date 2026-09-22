@@ -40,6 +40,8 @@ testem.log
 # System Files
 .DS_Store
 Thumbs.db
+.env
+.next
 
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
@@ -47,3 +49,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local database files
+local.db
+**/local.db
+
+# Local database files
+local.db
+**/local.db
