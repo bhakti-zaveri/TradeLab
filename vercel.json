@@ -2,6 +2,8 @@
   "buildCommand": "pnpm run build",
   "outputDirectory": "artifacts/tradelab/dist/public",
   "framework": "vite",
+  "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
     {
       "source": "/(.*)",

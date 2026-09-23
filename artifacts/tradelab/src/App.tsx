@@ -634,8 +634,9 @@ function Auth({ mode }: { mode: "login" | "register" }) {
 }
 
 function MiniEquity({ points = [] as any[] }) {
-  const values = points.length
-    ? points.map((p) => p.equity)
+  const validPoints = points || [];
+  const values = validPoints.length
+    ? validPoints.map((p) => p.equity)
     : [100000, 100850, 100420, 101650, 101220, 102480, 103140, 104280];
   const min = Math.min(...values),
     max = Math.max(...values);
@@ -848,8 +849,9 @@ function Dashboard() {
 }
 
 function CandleChart({ candles = [] as any[], currentIndex = 0 }) {
-  const visible = candles.length
-    ? candles.slice(0, Math.max(currentIndex + 1, 1))
+  const validCandles = candles || [];
+  const visible = validCandles.length
+    ? validCandles.slice(0, Math.max(currentIndex + 1, 1))
     : [];
   const source = visible.length
     ? visible
